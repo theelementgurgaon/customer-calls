@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Customer Calls · The Element</title>
+<!--
+  Support-team call sheet: customers who rated Acne Relief Serum or Brightening Drops 1-3★ on WhatsApp.
+  Data and saves go through the Supabase edge fn cs-calls (team passcode = feedback_settings.cs_call_key).
+  This file holds no customer data; it is published as-is to GitHub Pages by publish.sh in this folder.
+-->
+<style>
+:root{
+  --bg:#f5f4f0; --panel:#ffffff; --ink:#1c1b19; --muted:#6c6a64; --faint:#9a978f; --line:#e3e0d8; --soft:#efede7;
+  --accent:#1f5c48; --accent-ink:#ffffff; --accent-soft:#e2eee8;
+  --star:#d99a00; --sel:#fff6d9; --sel-line:#e6b422;
+  --bad:#b42318; --bad-soft:#fdeceb; --warn:#8a5a00; --warn-soft:#fff1cf;
+  --info:#1e4fc2; --info-soft:#e7eefc; --violet:#6a2fc9; --violet-soft:#efe8fc; --ok:#1d7340; --ok-soft:#e3f3e8;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141413; --panel:#1d1c1a; --ink:#ecebe6; --muted:#a7a49c; --faint:#77746d; --line:#33312d; --soft:#262522;
+    --accent:#5fbf98; --accent-ink:#0d1f18; --accent-soft:#1c3129;
+    --star:#f2b73a; --sel:#3a3016; --sel-line:#c99a24;
+    --bad:#ff8a80; --bad-soft:#3b1b19; --warn:#f2c46b; --warn-soft:#3a2d12;
+    --info:#8db0ff; --info-soft:#1b2640; --violet:#c3a6ff; --violet-soft:#2a2140; --ok:#7fd69f; --ok-soft:#183024;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141413; --panel:#1d1c1a; --ink:#ecebe6; --muted:#a7a49c; --faint:#77746d; --line:#33312d; --soft:#262522;
+  --accent:#5fbf98; --accent-ink:#0d1f18; --accent-soft:#1c3129;
+  --star:#f2b73a; --sel:#3a3016; --sel-line:#c99a24;
+  --bad:#ff8a80; --bad-soft:#3b1b19; --warn:#f2c46b; --warn-soft:#3a2d12;
+  --info:#8db0ff; --info-soft:#1b2640; --violet:#c3a6ff; --violet-soft:#2a2140; --ok:#7fd69f; --ok-soft:#183024;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+[hidden]{display:none!important}
+.mono{font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+/* lock screen */
+#lock{min-height:100%;display:grid;place-items:center;padding:16px}
+.lockcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;width:100%;max-width:360px}
+.lockcard h1{margin:0 0 4px;font-size:20px}
+.lockcard p{margin:0 0 18px;color:var(--muted)}
+.lockcard input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);font-size:16px}
+.lockcard button{margin-top:12px;width:100%}
+.err{color:var(--bad);margin-top:10px;min-height:1.2em}
+
+/* top bar */
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+.top{flex:none;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:10px 16px}
+.brand{font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.brand span{font-weight:400;color:var(--muted);margin-left:6px}
+.seg{display:flex;background:var(--soft);border-radius:10px;padding:3px;gap:3px}
+.seg button{border:0;background:transparent;border-radius:8px;padding:7px 12px;font-weight:600;color:var(--muted);text-align:left;line-height:1.2}
+.seg button small{display:block;font-weight:400;font-size:11.5px;color:var(--faint)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .12)}
+.seg button[aria-pressed="true"] small{color:var(--muted)}
+.topright{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.agent{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.agent input{width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.agent input.need{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.ghost{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 10px}
+.ghost:hover{background:var(--soft)}
+.synced{color:var(--faint);font-size:12px}
+.primary{border:0;background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:10px 16px;font-weight:600}
+.primary:disabled{opacity:.55;cursor:default}
+.banner{background:var(--bad-soft);color:var(--bad);padding:8px 16px;border-bottom:1px solid var(--line)}
+
+/* layout */
+.wrap{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,380px) 1fr}
+.listcol{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-width:0;min-height:0}
+.listtools{flex:none;padding:12px 12px 8px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line)}
+.filters{display:flex;flex-wrap:wrap;gap:6px}
+.filters button{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--muted)}
+.filters button b{color:var(--ink);font-weight:600;margin-left:3px}
+.filters button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.filters button[aria-pressed="true"] b{color:var(--panel)}
+#q{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+#list{list-style:none;margin:0;padding:0;overflow:auto;flex:1;min-height:0}
+.row{padding:10px 12px 10px 14px;border-bottom:1px solid var(--line);cursor:pointer;border-left:4px solid transparent}
+.row:hover{background:var(--soft)}
+.row[aria-selected="true"]{background:var(--sel);border-left-color:var(--sel-line)}
+.r1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stars{color:var(--star);letter-spacing:1px;white-space:nowrap;font-size:13px}
+.stars i{color:var(--line);font-style:normal}
+.phone{font-size:16px;font-weight:600;margin:2px 0 3px}
+.r3{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.pill{border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.p-todo{background:var(--info-soft);color:var(--info)}
+.p-retry{background:var(--warn-soft);color:var(--warn)}
+.p-open{background:var(--violet-soft);color:var(--violet)}
+.p-closed{background:var(--ok-soft);color:var(--ok)}
+.tag{display:inline-block;background:var(--soft);color:var(--muted);border-radius:6px;padding:1px 6px;font-size:11.5px;margin:3px 4px 0 0}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.emptylist{padding:28px 16px;color:var(--muted);text-align:center}
+
+/* detail */
+.detail{padding:20px 24px 60px;min-width:0;overflow:auto}
+.placeholder{color:var(--muted);padding:60px 0;text-align:center}
+.back{display:none;margin-bottom:12px}
+.callhead{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px}
+.callhead .who{min-width:0}
+.callhead .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+.callhead h2{margin:0;font-size:20px}
+.bignum{font-size:28px;font-weight:700;margin-top:2px}
+.callbtns{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.callbtns a,.callbtns button{display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:9px;padding:10px 14px;font-weight:600;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.callbtns a.call{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:600}
+.quote{font-size:15px;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.quote.none{color:var(--faint);font-style:italic}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13.5px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;overflow-wrap:anywhere}
+.items{margin:0;padding-left:18px}
+.note{border-radius:10px;padding:10px 12px;margin-top:12px;font-size:13.5px}
+.note.bot{background:var(--violet-soft);color:var(--ink)}
+.note.tip{background:var(--accent-soft)}
+.note.warn{background:var(--bad-soft);color:var(--bad)}
+.history{margin-top:12px}
+.hist{border-top:1px solid var(--line);padding:9px 0}
+.hist:first-of-type{border-top:0}
+.hist .when{color:var(--muted);font-size:12.5px}
+.hist .said{margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* form */
+form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:12px}
+form h3{margin:0 0 4px;font-size:16px}
+.q{margin-top:16px}
+.q > .ql{font-weight:600;margin-bottom:6px;display:block}
+.q > .ql small{font-weight:400;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.chip span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--panel);user-select:none}
+.chip:hover span{background:var(--soft)}
+.chip input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+.chip input:checked + span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip.red input:checked + span{background:var(--bad);border-color:var(--bad);color:#fff}
+textarea,input[type="date"],input[type="datetime-local"]{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--bg)}
+input[type="date"],input[type="datetime-local"]{width:auto}
+textarea{min-height:84px;resize:vertical}
+.connected{border-top:1px dashed var(--line);margin-top:16px;padding-top:2px}
+.closebox{display:flex;align-items:center;gap:8px;margin-top:18px;padding:10px 12px;background:var(--soft);border-radius:10px;font-weight:600}
+.closebox input{width:18px;height:18px;accent-color:var(--accent)}
+.actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+.actions .hint{color:var(--muted);font-size:12.5px}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s;max-width:calc(100% - 32px)}
+#toast.on{opacity:1}
+
+@media (max-width: 860px){
+  #app{display:block;height:auto}
+  .top{position:sticky;top:0}
+  #list,.detail{overflow:visible}
+  .topright{margin-left:0;width:100%}
+  .agent{flex:1}
+  .agent input{flex:1;width:auto}
+  .wrap{display:block}
+  .listcol{border-right:0}
+  .detail{padding:14px 16px 60px}
+  .app-detail .listcol{display:none}
+  .app-list .detail{display:none}
+  .back{display:inline-block}
+  .cards{grid-template-columns:1fr}
+  .callbtns{margin-left:0;width:100%}
+  .callbtns a,.callbtns button{flex:1;justify-content:center}
+  .bignum{font-size:26px}
+}
+</style>
+</head>
+<body>
+
+<div id="lock" hidden>
+  <form class="lockcard" id="lockform" autocomplete="off">
+    <h1>Customer calls</h1>
+    <p>The Element support team. Enter the team passcode to see the call list.</p>
+    <input id="pass" type="password" placeholder="Team passcode" autocomplete="current-password" required>
+    <button class="primary" type="submit">Open call list</button>
+    <div class="err" id="passerr"></div>
+  </form>
+</div>
+
+<div id="app" class="app-list" hidden>
+  <header class="top">
+    <div class="brand">The Element <span>Customer calls · 1–3★ ratings</span></div>
+    <div class="seg" id="productSeg" role="group" aria-label="Product"></div>
+    <div class="topright">
+      <label class="agent">Your name <input id="agent" placeholder="e.g. Diksha" autocomplete="name"></label>
+      <button class="ghost" id="refresh" type="button" title="Load the latest list">↻ Refresh</button>
+      <span class="synced" id="synced"></span>
+      <button class="ghost" id="lockbtn" type="button" title="Forget the passcode on this device">Lock</button>
+    </div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <main class="wrap">
+    <section class="listcol" aria-label="Customers to call">
+      <div class="listtools">
+        <div class="filters" id="filters" role="group" aria-label="Show"></div>
+        <input id="q" type="search" placeholder="Search name, number or order" autocomplete="off">
+      </div>
+      <ol id="list"></ol>
+    </section>
+    <section class="detail" id="detail">
+      <div class="placeholder">Pick a customer from the list to see their rating and log the call.</div>
+    </section>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const API = "https://urtwdqmiypjhnduspmwk.supabase.co/functions/v1/cs-calls";
+
+const PRODUCTS = {
+  serum: { label: "Acne Relief Serum", flag: "has_serum", other: "drops" },
+  drops: { label: "Brightening Drops", flag: "has_drops", other: "serum" },
+};
+const STATUS = [
+  ["connected", "Spoke to the customer"], ["no_answer", "No answer"], ["busy", "Busy / cut the call"],
+  ["switched_off", "Switched off / not reachable"], ["call_back", "Asked to call back"],
+  ["wrong_number", "Wrong number"], ["refused", "Didn't want to talk"],
+];
+const RETRY = new Set(["no_answer", "busy", "switched_off", "call_back"]);
+const SELF_CLOSING = new Set(["wrong_number", "refused"]);
+const BUCKETS = [["todo", "To call"], ["retry", "Try again"], ["open", "Spoke, still open"], ["closed", "Closed"], ["all", "All"]];
+const Q = {
+  still_using: [["using", "Still using"], ["stopped", "Stopped"], ["never_started", "Never started"]],
+  used_for: [["lt_1w", "Under 1 week"], ["1_2w", "1–2 weeks"], ["2_4w", "2–4 weeks"], ["1_2m", "1–2 months"], ["gt_2m", "Over 2 months"]],
+  usage: {
+    drops: [
+      ["timing", "When do they take it?", [["after_meal", "After a meal"], ["empty_stomach", "Empty stomach"], ["varies", "Varies"], ["not_sure", "Not sure"]]],
+      ["dose", "How much, how often?", [["as_directed", "5–6 drops, twice a day"], ["once_daily", "Only once a day"], ["fewer", "Fewer drops"], ["more", "More drops"], ["skips", "Skips days"]]],
+    ],
+    serum: [
+      ["frequency", "How often do they apply it?", [["once_daily", "Once a day"], ["twice_daily", "Twice a day"], ["few_week", "Few times a week"], ["irregular", "Irregular"]]],
+      ["sunscreen", "Do they use sunscreen in the day?", [["yes", "Yes"], ["sometimes", "Sometimes"], ["no", "No"]]],
+    ],
+  },
+  concerns: {
+    common: [["no_results", "No visible change"], ["slow_results", "Change is too slow"], ["breakouts", "More pimples / breakouts"],
+      ["reaction", "Itching, redness or rash"], ["dryness", "Dryness or peeling"]],
+    drops: [["taste", "Taste or smell"], ["stomach", "Stomach upset / acidity"]],
+    serum: [["burning", "Burning or stinging"], ["sticky", "Sticky or heavy feel"]],
+    tail: [["price", "Price / value"], ["delivery", "Delivery or packaging"], ["expectation", "Expected something else"], ["other", "Other"]],
+  },
+  actions: [["usage", "Explained correct usage"], ["timeline", "Explained how long results take"], ["replacement", "Offered replacement"],
+    ["refund", "Offered refund"], ["doctor", "Advised to see a doctor"], ["escalated", "Escalated to manager"], ["none", "Nothing needed"]],
+  mood_after: [["satisfied", "Happy"], ["neutral", "Okay"], ["unhappy", "Still unhappy"]],
+  will_continue: [["yes", "Yes"], ["maybe", "Maybe"], ["no", "No"]],
+};
+const LABEL = {};
+for (const [k, v] of STATUS) LABEL[k] = v;
+for (const arr of [Q.still_using, Q.used_for, Q.actions, Q.mood_after, ...Object.values(Q.concerns)]) for (const [k, v] of arr) LABEL[k] ??= v;
+const BOT = {
+  bot_handling: "The WhatsApp bot is still talking to them.",
+  needs_human: "The WhatsApp bot handed this chat to the team.",
+  bot_handled: "The WhatsApp bot replied; it did not hand the chat over.",
+};
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+let KEY = store.get("cs_key");
+let product = PRODUCTS[store.get("cs_product")] ? store.get("cs_product") : "serum";
+let bucket = "todo";
+let rows = [], callsBy = new Map();
+let selectedId = null, dirty = false, saving = false;
+
+const $ = (s) => document.querySelector(s);
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+const IST = { timeZone: "Asia/Kolkata" };
+const fmtDate = (s) => s ? new Date(s).toLocaleDateString("en-IN", { ...IST, day: "numeric", month: "short" }) : "–";
+const fmtWhen = (s) => s ? new Date(s).toLocaleString("en-IN", { ...IST, day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "–";
+const daysAgo = (s) => { const d = Math.floor((Date.now() - new Date(s)) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : d + "d ago"; };
+const fmtPhone = (p) => p && p.length === 10 ? p.slice(0, 5) + " " + p.slice(5) : (p || "");
+const starsEl = (n) => h("span", { class: "stars", "aria-label": n + " out of 5 stars" }, "★".repeat(n), h("i", {}, "★".repeat(5 - n)));
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 2600); }
+
+async function api(method, body, query = "") {
+  const res = await fetch(API + query, {
+    method, headers: { "x-cs-key": KEY || "", ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { lock("That passcode didn't work. Ask your manager for the current one."); throw new Error("locked"); }
+  if (!res.ok) throw new Error(data.error || ("Error " + res.status));
+  return data;
+}
+
+function lock(msg) {
+  KEY = null; store.set("cs_key", null);
+  $("#app").hidden = true; $("#lock").hidden = false;
+  $("#passerr").textContent = msg || "";
+  $("#pass").value = ""; $("#pass").focus();
+}
+
+async function load(quiet) {
+  try {
+    const d = await api("GET", null, "?action=list");
+    rows = d.rows || [];
+    callsBy = new Map();
+    for (const c of d.calls || []) { if (!callsBy.has(c.feedback_id)) callsBy.set(c.feedback_id, []); callsBy.get(c.feedback_id).push(c); }
+    $("#banner").hidden = true;
+    $("#synced").textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { ...IST, hour: "numeric", minute: "2-digit" });
+    renderAll(true);
+  } catch (e) {
+    if (e.message === "locked") return;
+    if (!quiet || !rows.length) { $("#banner").textContent = "Couldn't load the list (" + e.message + "). Check the internet and press Refresh."; $("#banner").hidden = false; }
+  }
+}
+
+function bucketOf(r) {
+  const cs = callsBy.get(r.id) || [];
+  if (r.resolved_at || cs.some((c) => c.case_closed)) return "closed";
+  if (!cs.length) return "todo";
+  return RETRY.has(cs[0].call_status) ? "retry" : "open";
+}
+const productRows = (p) => rows.filter((r) => r[PRODUCTS[p].flag]);
+
+function visibleRows() {
+  const q = $("#q").value.trim().toLowerCase().replace(/\s+/g, "");
+  let list = productRows(product).filter((r) => bucket === "all" || bucketOf(r) === bucket);
+  if (q) list = list.filter((r) => ((r.first_name || "") + (r.phone10 || "") + (r.order_name || "")).toLowerCase().replace(/\s+/g, "").includes(q));
+  if (bucket === "retry") {
+    const key = (r) => { const c = (callsBy.get(r.id) || [])[0]; return c?.callback_at || c?.created_at || ""; };
+    list.sort((a, b) => key(a).localeCompare(key(b)));
+  }
+  return list;
+}
+
+function pillFor(r) {
+  const b = bucketOf(r), cs = callsBy.get(r.id) || [];
+  if (b === "todo") return h("span", { class: "pill p-todo" }, "To call");
+  if (b === "closed") return h("span", { class: "pill p-closed" }, "Closed");
+  const last = cs[0];
+  if (b === "retry") {
+    if (last.call_status === "call_back" && last.callback_at) return h("span", { class: "pill p-retry" }, "Call back " + fmtWhen(last.callback_at));
+    const n = cs.filter((c) => RETRY.has(c.call_status)).length;
+    return h("span", { class: "pill p-retry" }, LABEL[last.call_status].split(" /")[0] + (n > 1 ? " ×" + n : ""));
+  }
+  return h("span", { class: "pill p-open" }, last.follow_up_on ? "Follow up " + fmtDate(last.follow_up_on) : "Spoke");
+}
+
+function renderTop() {
+  const seg = $("#productSeg"); seg.replaceChildren();
+  for (const [k, p] of Object.entries(PRODUCTS)) {
+    const all = productRows(k), todo = all.filter((r) => bucketOf(r) === "todo").length;
+    seg.append(h("button", { type: "button", "aria-pressed": String(k === product), onclick: () => switchProduct(k) },
+      p.label, h("small", {}, all.length + " customers · " + todo + " to call")));
+  }
+  const f = $("#filters"); f.replaceChildren();
+  const all = productRows(product);
+  for (const [k, label] of BUCKETS) {
+    const n = k === "all" ? all.length : all.filter((r) => bucketOf(r) === k).length;
+    f.append(h("button", { type: "button", "aria-pressed": String(k === bucket), onclick: () => { bucket = k; renderList(); renderTop(); } }, label, h("b", {}, n)));
+  }
+}
+
+function renderList() {
+  const ol = $("#list"); ol.replaceChildren();
+  const list = visibleRows();
+  if (!list.length) { ol.append(h("li", { class: "emptylist" }, $("#q").value ? "No match for that search." : "Nobody in this list.")); return; }
+  const other = PRODUCTS[PRODUCTS[product].other];
+  for (const r of list) {
+    ol.append(h("li", { class: "row", "aria-selected": String(r.id === selectedId), "data-id": r.id, onclick: () => select(r.id) },
+      h("div", { class: "r1" }, h("span", { class: "name" }, r.first_name || "Customer"), starsEl(r.stars)),
+      h("div", { class: "phone mono" }, fmtPhone(r.phone10)),
+      h("div", { class: "r3" }, h("span", {}, (r.order_name || "") + " · rated " + daysAgo(r.answered_at)), pillFor(r)),
+      r[other.flag] ? h("span", { class: "tag" }, "Also bought " + other.label) : null,
+      r.bot_status === "needs_human" ? h("span", { class: "tag bad" }, "Bot handed over") : null));
+  }
+}
+
+function renderAll(fromLoad) {
+  renderTop(); renderList();
+  const r = rows.find((x) => x.id === selectedId);
+  if (r && r[PRODUCTS[product].flag]) { renderInfo(r); if (!fromLoad || !$("#callform")) renderForm(r); }
+  else if (selectedId != null && fromLoad) { selectedId = null; $("#detail").replaceChildren(h("div", { class: "placeholder" }, "Pick a customer from the list to see their rating and log the call.")); }
+}
+
+function switchProduct(k) {
+  if (k === product) return;
+  if (!leaveOk()) return;
+  product = k; store.set("cs_product", k); selectedId = null; dirty = false;
+  $("#detail").replaceChildren(h("div", { class: "placeholder" }, "Pick a customer from the list to see their rating and log the call."));
+  showList(); renderTop(); renderList();
+}
+
+function leaveOk() {
+  if (!dirty) return true;
+  const r = rows.find((x) => x.id === selectedId);
+  return confirm("You have unsaved notes for " + (r?.first_name || "this customer") + ". Leave without saving?");
+}
+
+function select(id) {
+  if (id === selectedId) { showDetail(); return; }
+  if (!leaveOk()) return;
+  selectedId = id; dirty = false;
+  const r = rows.find((x) => x.id === id);
+  $("#detail").replaceChildren(h("div", { id: "info" }), h("div", { id: "formwrap" }));
+  renderInfo(r); renderForm(r);
+  document.querySelectorAll(".row").forEach((el) => el.setAttribute("aria-selected", String(Number(el.dataset.id) === id)));
+  document.title = "Calling " + (r.first_name || "customer") + " · Customer Calls";
+  showDetail();
+}
+function showDetail() { $("#app").classList.replace("app-list", "app-detail"); if (matchMedia("(max-width: 860px)").matches) window.scrollTo(0, 0); }
+function showList() {
+  $("#app").classList.replace("app-detail", "app-list");
+  document.title = "Customer Calls · The Element";
+  const el = document.querySelector('.row[aria-selected="true"]'); if (el) el.scrollIntoView({ block: "center" });
+}
+
+function renderInfo(r) {
+  const box = $("#info"); if (!box) return;
+  const cs = callsBy.get(r.id) || [];
+  const p = PRODUCTS[product], other = PRODUCTS[p.other];
+  const phone = r.phone10 || "";
+  const copyBtn = h("button", { type: "button", onclick: async () => { try { await navigator.clipboard.writeText(phone); toast("Number copied"); } catch { toast(phone); } } }, "Copy");
+
+  const head = h("div", { class: "callhead" },
+    h("div", { class: "who" }, h("div", { class: "lbl" }, "Selected customer"), h("h2", {}, r.first_name || "Customer"),
+      h("div", { class: "bignum mono" }, "+91 " + fmtPhone(phone))),
+    h("div", { class: "callbtns" },
+      h("a", { class: "call", href: "tel:+91" + phone }, "📞 Call"),
+      h("a", { href: "https://wa.me/91" + phone, target: "_blank", rel: "noopener" }, "WhatsApp"),
+      copyBtn));
+
+  const rating = h("div", { class: "card" }, h("h3", {}, "Their rating"),
+    h("div", {}, starsEl(r.stars), " ", h("b", {}, r.stars + " / 5"), h("span", { style: "color:var(--muted)" }, " · " + fmtWhen(r.answered_at))),
+    r.comment ? h("p", { class: "quote" }, "“" + r.comment + "”") : h("p", { class: "quote none" }, "No comment written."),
+    h("div", { style: "margin-top:8px;color:var(--muted);font-size:13px" },
+      r.days_after_delivery != null ? "Rated " + r.days_after_delivery + " days after delivery." : ""),
+    r[other.flag] ? h("div", { class: "tag" }, "Also bought " + other.label + ": ask about both") : null);
+
+  const order = h("div", { class: "card" }, h("h3", {}, "Order " + (r.order_name || "")),
+    h("ul", { class: "items" }, (r.items?.length ? r.items : r.products || []).map((t) => h("li", {}, t))),
+    h("dl", { class: "kv", style: "margin-top:8px" },
+      h("dt", {}, "Paid"), h("dd", {}, (r.total_price != null ? "₹" + Math.round(r.total_price) : "–") + (r.payment_method ? " · " + r.payment_method : "")),
+      h("dt", {}, "Ordered"), h("dd", {}, fmtDate(r.order_date)),
+      h("dt", {}, "Delivered"), h("dd", {}, fmtDate(r.delivered_at)),
+      h("dt", {}, "Place"), h("dd", {}, [r.city, r.state].filter(Boolean).join(", ") || "–"),
+      r.handled_by ? [h("dt", {}, "Handled by"), h("dd", {}, r.handled_by)] : null));
+
+  const notes = [];
+  if (r.bot_status && BOT[r.bot_status]) notes.push(h("div", { class: "note bot" }, h("b", {}, BOT[r.bot_status]),
+    r.handoff_summary ? h("div", { style: "margin-top:4px" }, r.handoff_summary) : null));
+  if (product === "drops") notes.push(h("div", { class: "note tip" }, h("b", {}, "Correct use: "), "5–6 drops in 150–200 ml of water, twice a day, after a meal. Never on an empty stomach."));
+
+  const hist = h("div", { class: "card history" }, h("h3", {}, cs.length ? "Earlier calls (" + cs.length + ")" : "Earlier calls"),
+    cs.length ? cs.map((c) => h("div", { class: "hist" },
+      h("div", { class: "when" }, fmtWhen(c.created_at) + " · " + c.agent + " · " + (c.product === "drops" ? "Drops" : "Serum")),
+      h("div", {}, h("b", {}, LABEL[c.call_status] || c.call_status),
+        c.callback_at ? " · call back " + fmtWhen(c.callback_at) : "",
+        c.follow_up_on ? " · follow up " + fmtDate(c.follow_up_on) : "",
+        c.case_closed ? " · closed" : ""),
+      (c.concerns || []).length ? h("div", {}, c.concerns.map((k) => h("span", { class: "tag" + (k === "reaction" ? " bad" : "") }, LABEL[k] || k))) : null,
+      c.customer_said ? h("div", { class: "said" }, "“" + c.customer_said + "”") : null,
+      c.notes ? h("div", { class: "said", style: "color:var(--muted)" }, "Note: " + c.notes) : null))
+      : h("div", { style: "color:var(--muted)" }, "Not called yet."));
+
+  box.replaceChildren(
+    h("button", { class: "ghost back", type: "button", onclick: () => { if (leaveOk()) { dirty = false; showList(); } } }, "← Back to list"),
+    head, h("div", { class: "cards" }, rating, order), ...notes, hist);
+}
+
+function chips(name, opts, type = "radio", red = new Set()) {
+  return h("div", { class: "chips" }, opts.map(([v, t]) =>
+    h("label", { class: "chip" + (red.has(v) ? " red" : "") }, h("input", { type, name, value: v }), h("span", {}, t))));
+}
+const qblock = (label, body, attrs = {}) => h("div", { class: "q", ...attrs }, h("span", { class: "ql" }, label), body);
+
+function renderForm(r) {
+  const wrap = $("#formwrap"); if (!wrap) return;
+  const today = new Date().toLocaleDateString("en-CA", IST);
+  const concerns = [...Q.concerns.common, ...Q.concerns[product], ...Q.concerns.tail];
+  const form = h("form", { id: "callform", autocomplete: "off" },
+    h("h3", {}, "Log this call"),
+    h("div", { style: "color:var(--muted)" }, "About: " + PRODUCTS[product].label + ". Saved straight to the database."),
+    qblock("1. What happened on the call?", chips("call_status", STATUS)),
+    qblock("When should we call back?", h("input", { type: "datetime-local", name: "callback_at" }), { id: "q-callback", hidden: true }),
+    h("div", { class: "connected", id: "q-connected", hidden: true },
+      qblock("2. Are they still using it?", chips("still_using", Q.still_using)),
+      qblock("3. How long did they use it?", chips("used_for", Q.used_for)),
+      Q.usage[product].map(([k, label, opts], i) => qblock((4 + i) + ". " + label, chips("u_" + k, opts))),
+      qblock(h("span", {}, "6. What is the problem? ", h("small", {}, "tick all that apply")), chips("concerns", concerns, "checkbox", new Set(["reaction"]))),
+      h("div", { class: "note warn", id: "q-reaction", hidden: true }, h("b", {}, "Skin reaction reported. "), "Tell your manager today and note exactly what they describe."),
+      qblock(h("span", {}, "7. What did the customer say? ", h("small", {}, "in their words")), h("textarea", { name: "customer_said", placeholder: "e.g. Used it for 3 weeks, no change yet…" })),
+      qblock(h("span", {}, "8. What did you do? ", h("small", {}, "tick all that apply")), chips("actions", Q.actions, "checkbox")),
+      qblock("9. How did the call end?", chips("mood_after", Q.mood_after)),
+      qblock("10. Will they keep using it?", chips("will_continue", Q.will_continue))),
+    qblock(h("span", {}, "Follow-up date ", h("small", {}, "optional")), h("input", { type: "date", name: "follow_up_on", min: today })),
+    qblock(h("span", {}, "Notes for the team ", h("small", {}, "optional")), h("textarea", { name: "notes", placeholder: "Anything the next person should know" })),
+    h("label", { class: "closebox" }, h("input", { type: "checkbox", name: "case_closed" }), "Close this case: no more calls needed"),
+    h("div", { class: "actions" },
+      h("button", { class: "primary", type: "submit", name: "go", value: "next" }, "Save & next customer"),
+      h("button", { class: "ghost", type: "submit", name: "go", value: "stay" }, "Save"),
+      h("span", { class: "hint", id: "formhint" })));
+
+  form.addEventListener("input", () => { dirty = true; });
+  form.addEventListener("change", (e) => {
+    dirty = true;
+    if (e.target.name === "call_status") {
+      const s = e.target.value;
+      form.querySelector("#q-connected").hidden = s !== "connected";
+      form.querySelector("#q-callback").hidden = s !== "call_back";
+      form.elements.case_closed.checked = SELF_CLOSING.has(s);
+    }
+    if (e.target.name === "concerns") form.querySelector("#q-reaction").hidden = !form.querySelector('input[name="concerns"][value="reaction"]').checked;
+  });
+  form.addEventListener("submit", (e) => { e.preventDefault(); save(r, form, e.submitter?.value === "next"); });
+  wrap.replaceChildren(form);
+}
+
+async function save(r, form, next) {
+  if (saving) return;
+  const agentEl = $("#agent"), agent = agentEl.value.trim();
+  if (!agent) { agentEl.classList.add("need"); agentEl.focus(); toast("Write your name at the top first"); return; }
+  const fd = new FormData(form);
+  const status = fd.get("call_status");
+  if (!status) { toast("Pick what happened on the call"); form.querySelector('input[name="call_status"]').focus(); return; }
+  const usage = {};
+  for (const [k] of Q.usage[product]) { const v = fd.get("u_" + k); if (v) usage[k] = v; }
+  const cb = fd.get("callback_at");
+  const body = {
+    action: "save", feedback_id: r.id, product, agent, call_status: status,
+    callback_at: cb ? new Date(cb).toISOString() : null,
+    still_using: fd.get("still_using"), used_for: fd.get("used_for"), usage,
+    concerns: fd.getAll("concerns"), customer_said: fd.get("customer_said"), actions: fd.getAll("actions"),
+    mood_after: fd.get("mood_after"), will_continue: fd.get("will_continue"),
+    follow_up_on: fd.get("follow_up_on") || null, case_closed: fd.get("case_closed") === "on", notes: fd.get("notes"),
+  };
+  const before = visibleRows().map((x) => x.id);
+  saving = true; form.querySelectorAll("button").forEach((b) => b.disabled = true); $("#formhint").textContent = "Saving…";
+  try {
+    const d = await api("POST", body);
+    if (!callsBy.has(r.id)) callsBy.set(r.id, []);
+    callsBy.get(r.id).unshift(d.call);
+    r.handled_by = agent; if (body.case_closed) r.resolved_at = r.resolved_at || new Date().toISOString();
+    dirty = false;
+    toast("Saved for " + (r.first_name || "customer") + (d.warning ? " (" + d.warning + ")" : ""));
+    let nextId = null;
+    if (next) { const i = before.indexOf(r.id); const rest = visibleRows().map((x) => x.id).filter((id) => id !== r.id); nextId = rest.find((id) => before.indexOf(id) > i) ?? rest[0] ?? null; }
+    renderTop(); renderList();
+    if (nextId != null) { selectedId = null; select(nextId); }
+    else { renderInfo(r); renderForm(r); if (next) toast("Saved. Nobody left in this list."); }
+  } catch (e) {
+    if (e.message !== "locked") { $("#formhint").textContent = "Not saved: " + e.message; toast("Not saved, try again"); }
+    form.querySelectorAll("button").forEach((b) => b.disabled = false);
+  } finally { saving = false; }
+}
+
+$("#lockform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  KEY = $("#pass").value.trim(); if (!KEY) return;
+  $("#passerr").textContent = "Checking…";
+  try {
+    await api("GET", null, "?action=list");
+    store.set("cs_key", KEY); start();
+  } catch (err) { if (err.message !== "locked") $("#passerr").textContent = "Couldn't connect: " + err.message; }
+});
+$("#lockbtn").addEventListener("click", () => { if (leaveOk()) { dirty = false; lock(""); } });
+$("#refresh").addEventListener("click", () => load());
+$("#q").addEventListener("input", renderList);
+$("#agent").value = store.get("cs_agent") || "";
+$("#agent").addEventListener("input", (e) => { e.target.classList.remove("need"); store.set("cs_agent", e.target.value.trim()); });
+window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+function start() {
+  $("#lock").hidden = true; $("#app").hidden = false;
+  load();
+  clearInterval(start.t);
+  start.t = setInterval(() => { if (document.visibilityState === "visible") load(true); }, 60000);
+}
+if (KEY) start(); else lock("");
+</script>
+</body>
+</html>
