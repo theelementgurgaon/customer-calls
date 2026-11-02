@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Review Approval · The Element</title>
+<!--
+  Approve or reject one held 1-2★ website review. reviews-sync keeps those reviews off the site and links here from its
+  Teams alert (?r=<id>.<token>). The review and the decision go through the Supabase edge fn review-approval.
+  This file holds no customer data; it is published as-is to GitHub Pages by publish.sh in this folder.
+-->
+<style>
+:root{
+  --bg:#f5f4f0; --panel:#ffffff; --ink:#1c1b19; --muted:#6c6a64; --line:#e3e0d8; --soft:#efede7;
+  --accent:#1f5c48; --accent-ink:#ffffff; --star:#d99a00;
+  --bad:#b42318; --bad-soft:#fdeceb; --warn:#8a5a00; --warn-soft:#fff1cf; --ok:#1d7340; --ok-soft:#e3f3e8;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#141413; --panel:#1d1c1a; --ink:#ecebe6; --muted:#a7a49c; --line:#33312d; --soft:#262522;
+    --accent:#5fbf98; --accent-ink:#0d1f18; --star:#f2b73a;
+    --bad:#ff8a80; --bad-soft:#3b1b19; --warn:#f2c46b; --warn-soft:#3a2d12; --ok:#7fd69f; --ok-soft:#183024;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:560px;margin:0 auto;padding:24px 16px 40px}
+h1{margin:0 0 16px;font-size:18px;font-weight:700}
+h1 span{font-weight:400;color:var(--muted);margin-left:6px}
+[hidden]{display:none!important}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+.stars{color:var(--star);font-size:20px;letter-spacing:2px;line-height:1}
+.meta{color:var(--muted);font-size:13.5px;margin-top:8px}
+.title{font-weight:700;margin-top:14px}
+.text{margin-top:4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.status{border-radius:10px;padding:10px 12px;margin-top:16px;font-weight:600;font-size:14px}
+.status.waiting{background:var(--warn-soft);color:var(--warn)}
+.status.approved{background:var(--ok-soft);color:var(--ok)}
+.status.hidden{background:var(--soft);color:var(--muted)}
+.status.error{background:var(--bad-soft);color:var(--bad)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+button{font:inherit;font-weight:600;border-radius:10px;padding:12px 16px;cursor:pointer;flex:1 1 200px;min-height:46px}
+button:disabled{opacity:.55;cursor:default}
+.primary{border:0;background:var(--accent);color:var(--accent-ink)}
+.ghost{border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.note{color:var(--muted);font-size:13px;margin:14px 2px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Website review<span>The Element</span></h1>
+  <div class="card" id="card" aria-live="polite">
+    <p id="loading" style="margin:0;color:var(--muted)">Loading the review…</p>
+    <div id="review" hidden>
+      <div class="stars" id="stars"></div>
+      <div class="meta" id="meta"></div>
+      <div class="title" id="title"></div>
+      <div class="text" id="text"></div>
+    </div>
+    <div class="status" id="status" hidden></div>
+    <div class="actions" id="actions" hidden>
+      <button class="primary" id="approve" type="button">Put on website</button>
+      <button class="ghost" id="reject" type="button">Keep off website</button>
+    </div>
+  </div>
+  <p class="note" id="note" hidden>Approving shows this review exactly as written and counts its stars in the product's rating. A review deleted from the Google Sheet will not appear, even if approved.</p>
+</main>
+<script>
+const API = "https://urtwdqmiypjhnduspmwk.supabase.co/functions/v1/review-approval";
+const [id = "", token = ""] = (new URLSearchParams(location.search).get("r") || "").split(".");
+const $ = (x) => document.getElementById(x);
+
+const STATUS = {
+  new: ["waiting", "Waiting for approval. Not on the website."],
+  approved: ["approved", "Approved. It appears on the website within 15 minutes of approval."],
+  hidden: ["hidden", "Rejected. Not on the website."],
+};
+
+async function call(body) {
+  const res = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, token, ...body }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  return data;
+}
+
+function showError(message) {
+  $("loading").hidden = true;
+  $("status").className = "status error";
+  $("status").textContent = message;
+  $("status").hidden = false;
+}
+
+function show(r) {
+  $("loading").hidden = true;
+  $("review").hidden = false;
+  $("stars").textContent = "★".repeat(r.stars) + "☆".repeat(5 - r.stars);
+  $("stars").setAttribute("aria-label", r.stars + " out of 5 stars");
+  const when = r.date ? new Date(r.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
+  $("meta").textContent = [r.name, r.product, when].filter(Boolean).join(" · ");
+  $("title").textContent = r.title;
+  $("title").hidden = !r.title;
+  $("text").textContent = r.review;
+  const [cls, label] = STATUS[r.status] || STATUS.new;
+  $("status").className = "status " + cls;
+  $("status").textContent = (r.test ? "TEST review, nothing goes on the website. " : "") + label;
+  $("status").hidden = false;
+  $("actions").hidden = false;
+  $("note").hidden = r.status === "approved";
+  // A decision can be changed: the page only offers what would change something.
+  $("approve").hidden = r.status === "approved";
+  $("reject").hidden = r.status === "hidden";
+  $("reject").textContent = r.status === "approved" ? "Take off website" : "Keep off website";
+  $("reject").className = r.status === "approved" ? "primary" : "ghost";
+}
+
+async function decide(decision) {
+  $("approve").disabled = $("reject").disabled = true;
+  try {
+    show(await call({ action: "decide", decision }));
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    $("approve").disabled = $("reject").disabled = false;
+  }
+}
+
+$("approve").addEventListener("click", () => decide("approve"));
+$("reject").addEventListener("click", () => decide("reject"));
+
+call({ action: "get" }).then(show).catch((e) => showError(e.message));
+</script>
+</body>
+</html>
